@@ -1,0 +1,23 @@
+#!/bin/bash
+# 一键部署脚本 - 上传到 Railway
+
+echo "=========================================="
+echo "  抖音文案提取工具 - Railway 部署脚本"
+echo "=========================================="
+echo ""
+echo "请按照以下步骤操作："
+echo ""
+echo "1. 访问 https://railway.app 并注册账号（可用 Google 登录）"
+echo "2. 点击 'New Project'"
+echo "3. 选择 'Empty Project'"
+echo "4. 在项目页面，点击 '+ New' → 'GitHub Repo'"
+echo "5. 如果没有连接 GitHub，选择 'Deploy from CLI'"
+echo ""
+echo "或者使用以下命令（需要安装 Railway CLI）："
+echo ""
+echo "  npm install -g @railway/cli"
+echo "  railway login"
+echo "  railway init"
+echo "  railway up"
+echo ""
+echo "=========================================="

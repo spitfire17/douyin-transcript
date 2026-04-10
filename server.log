@@ -1,0 +1,14 @@
+==================================================
+抖音文案提取服务 v2.0
+支持：视频直链下载 + AI 语音识别
+访问地址: http://localhost:8000
+==================================================
+ * Serving Flask app 'app_v2'
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8000
+ * Running on http://172.24.0.2:8000
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [10/Apr/2026 11:45:02] "GET /api/health HTTP/1.1" 200 -
+127.0.0.1 - - [10/Apr/2026 11:48:11] "GET / HTTP/1.1" 200 -

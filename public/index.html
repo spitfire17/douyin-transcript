@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>抖音文案提取 - 视频转文字工具</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        :root {
+            --primary: #FF2D55;
+            --primary-light: #FF6B8A;
+            --text: #333;
+            --text-secondary: #666;
+            --text-light: #999;
+            --bg: #F5F5F5;
+            --white: #fff;
+            --success: #07C160;
+            --error: #EE0A24;
+            --warning: #FF9500;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+        
+        .header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+            color: white;
+            padding: 40px 20px;
+            text-align: center;
+            margin: -20px -20px 30px;
+        }
+        
+        .header h1 { font-size: 28px; margin-bottom: 8px; }
+        .header p { font-size: 15px; opacity: 0.9; }
+        
+        .card {
+            background: var(--white);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+        }
+        
+        .card-title { font-size: 17px; font-weight: 600; margin-bottom: 16px; }
+        
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #eee;
+            margin-bottom: 20px;
+        }
+        
+        .tab {
+            padding: 12px 20px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            color: var(--text-secondary);
+            transition: all 0.3s;
+        }
+        
+        .tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+        
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 14px;
+            border: 2px solid #eee;
+            border-radius: 12px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+        
+        textarea:focus { outline: none; border-color: var(--primary); }
+        textarea::placeholder { color: var(--text-light); }
+        
+        .input-hint {
+            font-size: 12px;
+            color: var(--text-light);
+            margin-top: 8px;
+        }
+        
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 14px 28px;
+            border: none;
+            border-radius: 24px;
+            font-size: 15px;
+            font-weight: 500;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+            color: white;
+            width: 100%;
+            margin-top: 16px;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(255,45,85,0.3);
+        }
+        
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+        
+        .btn-secondary {
+            background: var(--white);
+            color: var(--primary);
+            border: 2px solid var(--primary);
+            flex: 1;
+        }
+        
+        .btn-group { display: flex; gap: 12px; margin-top: 16px; }
+        
+        /* 进度 */
+        .progress-container { display: none; text-align: center; padding: 30px 20px; }
+        .progress-container.active { display: block; }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 16px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+        
+        .progress-text { color: var(--text-secondary); font-size: 14px; }
+        
+        /* 结果 */
+        .result { display: none; }
+        .result.active { display: block; }
+        
+        .video-info {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding: 12px;
+            background: #fafafa;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+        
+        .result-content {
+            background: #fafafa;
+            border-radius: 12px;
+            padding: 20px;
+            font-size: 15px;
+            line-height: 1.8;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        /* 提示框 */
+        .alert {
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+        
+        .alert-warning {
+            background: #FFF9E6;
+            border: 1px solid #FFE58F;
+            color: #D48806;
+        }
+        
+        .alert-info {
+            background: #E6F7FF;
+            border: 1px solid #91D5FF;
+            color: #0050B3;
+        }
+        
+        .alert h4 { margin-bottom: 8px; }
+        
+        .alert ul { margin-left: 20px; margin-top: 8px; }
+        .alert li { margin: 4px 0; }
+        
+        .tips-list { list-style: none; }
+        .tips-list li {
+            padding: 8px 0 8px 24px;
+            position: relative;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+        .tips-list li::before {
+            content: '✓';
+            color: var(--success);
+            position: absolute;
+            left: 0;
+        }
+        
+        .toast {
+            position: fixed;
+            top: 24px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100px);
+            background: rgba(0,0,0,0.85);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 24px;
+            font-size: 14px;
+            z-index: 1000;
+            transition: transform 0.3s;
+        }
+        
+        .toast.show { transform: translateX(-50%) translateY(0); }
+        
+        .footer {
+            text-align: center;
+            padding: 30px 20px;
+            color: var(--text-light);
+            font-size: 13px;
+        }
+        
+        .hidden { display: none !important; }
+        
+        @media (max-width: 600px) {
+            .header h1 { font-size: 24px; }
+            .btn-group { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎬 视频文案提取</h1>
+            <p>粘贴视频链接，AI 自动提取完整文案</p>
+        </div>
+        
+        <div class="card" id="inputCard">
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('direct')">视频直链</div>
+                <div class="tab" onclick="switchTab('douyin')">抖音链接</div>
+            </div>
+            
+            <!-- 直链模式 -->
+            <div class="tab-content active" id="directTab">
+                <textarea 
+                    id="directInput" 
+                    placeholder="粘贴视频直链...
+
+示例：
+https://v3-web.douyinvod.com/xxx.mp4
+https://example.com/video.mp4"
+                ></textarea>
+                <div class="input-hint">
+                    💡 支持任意视频直链，直接下载并提取文案
+                </div>
+            </div>
+            
+            <!-- 抖音模式 -->
+            <div class="tab-content" id="douyinTab">
+                <div class="alert alert-info">
+                    <h4>📱 如何获取视频直链？</h4>
+                    <ul>
+                        <li><strong>方法1：</strong>使用手机抖音 App → 分享 → 复制链接</li>
+                        <li><strong>方法2：</strong>使用第三方解析工具获取直链</li>
+                        <li><strong>方法3：</strong>使用电脑浏览器开发者工具抓取</li>
+                    </ul>
+                </div>
+                <textarea 
+                    id="douyinInput" 
+                    placeholder="粘贴抖音分享口令...
+
+示例：
+7.44 eOk/ 复制这段内容...
+https://v.douyin.com/xxx"
+                ></textarea>
+            </div>
+            
+            <button class="btn btn-primary" id="extractBtn" onclick="startExtract()">
+                🚀 开始提取文案
+            </button>
+        </div>
+        
+        <div class="card progress-container" id="progressCard">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+            </div>
+            <div class="progress-text" id="progressText">准备中...</div>
+        </div>
+        
+        <div class="card result" id="resultCard">
+            <div class="card-title">📄 提取结果</div>
+            <div class="video-info" id="videoInfo"></div>
+            <div class="result-content" id="resultContent"></div>
+            <div class="btn-group">
+                <button class="btn btn-secondary" onclick="copyResult()">📋 复制文案</button>
+                <button class="btn btn-secondary" onclick="downloadResult()">💾 下载文件</button>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-secondary" onclick="resetAll()">🔄 提取新视频</button>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-title">💡 使用说明</div>
+            <ul class="tips-list">
+                <li>支持任意视频链接（mp4、mov 等）</li>
+                <li>AI 语音识别，中文准确率高</li>
+                <li>处理时间约 1-3 分钟，请耐心等待</li>
+                <li>完全免费，无需注册</li>
+            </ul>
+        </div>
+        
+        <div class="footer">
+            <p>本工具免费使用 · 仅供学习交流</p>
+        </div>
+    </div>
+    
+    <div class="toast" id="toast"></div>
+    
+    <script>
+        const API_BASE = window.location.origin;
+        let currentResult = null;
+        let taskId = null;
+        let currentTab = 'direct';
+        
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            
+            document.querySelector(`.tab:${tab === 'direct' ? 'first-child' : 'last-child'}`).classList.add('active');
+            document.getElementById(tab + 'Tab').classList.add('active');
+        }
+        
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+        
+        async function startExtract() {
+            let input = '';
+            
+            if (currentTab === 'direct') {
+                input = document.getElementById('directInput').value.trim();
+                if (!input) {
+                    showToast('请输入视频直链');
+                    return;
+                }
+                if (!input.startsWith('http')) {
+                    showToast('请输入有效的视频链接');
+                    return;
+                }
+            } else {
+                input = document.getElementById('douyinInput').value.trim();
+                if (!input) {
+                    showToast('请输入抖音链接或分享口令');
+                    return;
+                }
+            }
+            
+            // 显示进度
+            document.getElementById('inputCard').classList.add('hidden');
+            document.getElementById('progressCard').classList.add('active');
+            document.getElementById('resultCard').classList.remove('active');
+            document.getElementById('progressFill').style.width = '0%';
+            document.getElementById('progressText').textContent = '正在创建任务...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/extract`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        video_url: currentTab === 'direct' ? input : '',
+                        url_or_share_text: currentTab === 'douyin' ? input : ''
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.need_parse) {
+                    showToast('抖音链接需要先获取视频直链');
+                    document.getElementById('inputCard').classList.remove('hidden');
+                    document.getElementById('progressCard').classList.remove('active');
+                    return;
+                }
+                
+                if (!data.success) {
+                    throw new Error(data.message || '创建任务失败');
+                }
+                
+                taskId = data.taskId;
+                pollStatus();
+                
+            } catch (error) {
+                showToast(error.message);
+                document.getElementById('inputCard').classList.remove('hidden');
+                document.getElementById('progressCard').classList.remove('active');
+            }
+        }
+        
+        async function pollStatus() {
+            if (!taskId) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/status/${taskId}`);
+                const data = await response.json();
+                
+                if (data.status === 'completed') {
+                    currentResult = data.data;
+                    showResult(data.data);
+                    return;
+                }
+                
+                if (data.status === 'failed') {
+                    showToast(data.message || '处理失败');
+                    document.getElementById('inputCard').classList.remove('hidden');
+                    document.getElementById('progressCard').classList.remove('active');
+                    return;
+                }
+                
+                // 更新进度
+                document.getElementById('progressFill').style.width = `${data.progress}%`;
+                
+                let text = '处理中...';
+                if (data.progress <= 20) text = '准备中...';
+                else if (data.progress <= 50) text = '下载视频中...';
+                else if (data.progress <= 90) text = 'AI 语音识别中...';
+                else text = '即将完成...';
+                
+                document.getElementById('progressText').textContent = text;
+                
+                setTimeout(pollStatus, 1500);
+                
+            } catch (error) {
+                setTimeout(pollStatus, 2000);
+            }
+        }
+        
+        function showResult(data) {
+            document.getElementById('progressCard').classList.remove('active');
+            
+            document.getElementById('videoInfo').innerHTML = `
+                <span><strong>时长：</strong>${formatDuration(data.duration || 0)}</span>
+                <span><strong>大小：</strong>${data.file_size_mb || 0} MB</span>
+            `;
+            
+            document.getElementById('resultContent').textContent = data.transcript || '暂无内容';
+            document.getElementById('resultCard').classList.add('active');
+        }
+        
+        function formatDuration(seconds) {
+            const min = Math.floor(seconds / 60);
+            const sec = Math.floor(seconds % 60);
+            return `${min}分${sec}秒`;
+        }
+        
+        async function copyResult() {
+            if (!currentResult) return;
+            try {
+                await navigator.clipboard.writeText(currentResult.transcript);
+                showToast('已复制到剪贴板');
+            } catch (e) {
+                showToast('复制失败');
+            }
+        }
+        
+        function downloadResult() {
+            if (!currentResult) return;
+            
+            const content = `# 视频文案\n\n${currentResult.transcript}`;
+            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '视频文案.txt';
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('文件已下载');
+        }
+        
+        function resetAll() {
+            document.getElementById('directInput').value = '';
+            document.getElementById('douyinInput').value = '';
+            currentResult = null;
+            taskId = null;
+            document.getElementById('inputCard').classList.remove('hidden');
+            document.getElementById('resultCard').classList.remove('active');
+            document.getElementById('progressCard').classList.remove('active');
+        }
+    </script>
+</body>
+</html>
