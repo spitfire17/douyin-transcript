@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-抖音文案提取 - v5.0 异步版
-解决超时问题：异步处理 + 快速语音识别
+抖音文案提取 - v5.2 持久化版
+解决任务丢失问题：任务状态持久化到SQLite
 """
 
 from flask import Flask, request, jsonify, send_from_directory
@@ -15,16 +15,87 @@ import time
 import uuid
 import threading
 import requests
+import sqlite3
 
 app = Flask(__name__, static_folder='public')
 CORS(app)
 
-# 任务存储（生产环境应使用 Redis）
-tasks = {}
+# 持久化数据库路径
+DB_PATH = '/tmp/douyin_tasks.db'
+
+def init_db():
+    """初始化SQLite数据库"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS tasks (
+            task_id TEXT PRIMARY KEY,
+            status TEXT,
+            progress INTEGER,
+            title TEXT,
+            author TEXT,
+            result TEXT,
+            error TEXT,
+            created_at REAL,
+            updated_at REAL
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+def save_task(task_id, data):
+    """保存任务到数据库"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('''
+        INSERT OR REPLACE INTO tasks 
+        (task_id, status, progress, title, author, result, error, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        task_id,
+        data.get('status'),
+        data.get('progress', 0),
+        data.get('title', ''),
+        data.get('author', ''),
+        json.dumps(data.get('result', {})) if data.get('result') else None,
+        data.get('error', ''),
+        data.get('created_at', time.time()),
+        time.time()
+    ))
+    conn.commit()
+    conn.close()
+
+def get_task(task_id):
+    """从数据库获取任务"""
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT * FROM tasks WHERE task_id = ?', (task_id,))
+    row = c.fetchone()
+    conn.close()
+    if row:
+        return {
+            'task_id': row[0],
+            'status': row[1],
+            'progress': row[2],
+            'title': row[3],
+            'author': row[4],
+            'result': json.loads(row[5]) if row[5] else None,
+            'error': row[6],
+            'created_at': row[7],
+            'updated_at': row[8]
+        }
+    return None
+
+def update_task(task_id, updates):
+    """更新任务状态"""
+    task = get_task(task_id)
+    if task:
+        task.update(updates)
+        task['updated_at'] = time.time()
+        save_task(task_id, task)
 
 def extract_url_from_share(text):
     """从分享口令中提取抖音链接"""
-    # 支持链接中的下划线和斜杠
     pattern = r'https://v\.douyin\.com/[A-Za-z0-9_]+'
     match = re.search(pattern, text)
     if match:
@@ -90,41 +161,34 @@ def transcribe_fast(video_path):
 def process_task(task_id, douyin_url):
     """后台处理任务"""
     try:
-        tasks[task_id]['status'] = 'parsing'
-        tasks[task_id]['progress'] = 10
+        update_task(task_id, {'status': 'parsing', 'progress': 10})
         
         # 解析链接
         result, error = parse_douyin_url(douyin_url)
         if not result:
-            tasks[task_id]['status'] = 'failed'
-            tasks[task_id]['error'] = error
+            update_task(task_id, {'status': 'failed', 'error': error})
             return
         
-        tasks[task_id]['progress'] = 30
-        tasks[task_id]['status'] = 'downloading'
-        tasks[task_id]['title'] = result['title']
-        tasks[task_id]['author'] = result['author']
+        update_task(task_id, {
+            'status': 'downloading',
+            'progress': 30,
+            'title': result['title'],
+            'author': result['author']
+        })
         
         # 下载视频
         temp_dir = tempfile.mkdtemp()
         video_path = os.path.join(temp_dir, 'video.mp4')
         
         if not download_video(result['video_url'], video_path):
-            tasks[task_id]['status'] = 'failed'
-            tasks[task_id]['error'] = '视频下载失败'
+            update_task(task_id, {'status': 'failed', 'error': '视频下载失败'})
             return
         
         file_size = os.path.getsize(video_path)
-        tasks[task_id]['progress'] = 60
-        tasks[task_id]['status'] = 'transcribing'
+        update_task(task_id, {'status': 'transcribing', 'progress': 60})
         
         # 语音识别
         transcript, duration = transcribe_fast(video_path)
-        
-        if not transcript:
-            tasks[task_id]['status'] = 'failed'
-            tasks[task_id]['error'] = '语音识别失败'
-            return
         
         # 清理
         try:
@@ -133,10 +197,12 @@ def process_task(task_id, douyin_url):
         except:
             pass
         
-        # 完成
-        tasks[task_id]['status'] = 'completed'
-        tasks[task_id]['progress'] = 100
-        tasks[task_id]['result'] = {
+        if not transcript:
+            update_task(task_id, {'status': 'failed', 'error': '语音识别失败'})
+            return
+        
+        # 完成 - 保存结果
+        result_data = {
             'title': result['title'],
             'author': result['author'],
             'duration': round(duration, 1),
@@ -144,9 +210,19 @@ def process_task(task_id, douyin_url):
             'file_size_mb': round(file_size / 1024 / 1024, 2)
         }
         
+        # 同时保存到文件，双重保险
+        result_file = f"/tmp/result_{task_id}.json"
+        with open(result_file, 'w', encoding='utf-8') as f:
+            json.dump(result_data, f, ensure_ascii=False)
+        
+        update_task(task_id, {
+            'status': 'completed',
+            'progress': 100,
+            'result': result_data
+        })
+        
     except Exception as e:
-        tasks[task_id]['status'] = 'failed'
-        tasks[task_id]['error'] = str(e)
+        update_task(task_id, {'status': 'failed', 'error': str(e)})
 
 @app.route('/')
 def index():
@@ -169,11 +245,11 @@ def create_task():
         
         # 创建任务
         task_id = str(uuid.uuid4())[:8]
-        tasks[task_id] = {
+        save_task(task_id, {
             'status': 'pending',
             'progress': 0,
             'created_at': time.time()
-        }
+        })
         
         # 后台处理
         thread = threading.Thread(target=process_task, args=(task_id, douyin_url))
@@ -191,10 +267,20 @@ def create_task():
 @app.route('/api/status/<task_id>')
 def get_status(task_id):
     """查询任务状态"""
-    if task_id not in tasks:
+    task = get_task(task_id)
+    if not task:
+        # 尝试从文件读取结果
+        result_file = f"/tmp/result_{task_id}.json"
+        if os.path.exists(result_file):
+            with open(result_file, 'r', encoding='utf-8') as f:
+                result = json.load(f)
+            return jsonify({
+                'success': True,
+                'status': 'completed',
+                'progress': 100,
+                'data': result
+            })
         return jsonify({'success': False, 'message': '任务不存在'}), 404
-    
-    task = tasks[task_id]
     
     response = {
         'success': True,
@@ -214,13 +300,16 @@ def health():
     return jsonify({
         'status': 'ok',
         'service': 'douyin-transcript',
-        'version': '5.1',
+        'version': '5.2',
         'updated': '2024-04-10'
     })
 
+# 初始化数据库
+init_db()
+
 if __name__ == '__main__':
     print("=" * 50)
-    print("抖音文案提取服务 v5.0（异步版）")
+    print("抖音文案提取服务 v5.2（持久化版）")
     print("支持：抖音分享链接直接解析")
     print("访问地址: http://localhost:5000")
     print("=" * 50)
