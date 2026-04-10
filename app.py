@@ -214,7 +214,7 @@ def health():
     return jsonify({
         'status': 'ok',
         'service': 'douyin-transcript',
-        'version': '5.0',
+        'version': '5.1',
         'updated': '2024-04-10'
     })
 
