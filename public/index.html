@@ -127,7 +127,7 @@
             height: 100%;
             background: linear-gradient(135deg, var(--primary), var(--primary-light));
             border-radius: 4px;
-            transition: width 0.3s;
+            transition: width 0.5s;
         }
         
         .progress-text { color: var(--text-secondary); font-size: 14px; }
@@ -196,6 +196,31 @@
         }
         
         .hidden { display: none !important; }
+        
+        .status-steps {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        
+        .status-step {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            background: #eee;
+            color: var(--text-light);
+        }
+        
+        .status-step.active {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .status-step.done {
+            background: var(--success);
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -226,7 +251,13 @@ N@J.VL 11/08 AgO:/"
             <div class="progress-bar">
                 <div class="progress-fill" id="progressFill" style="width: 0%"></div>
             </div>
-            <div class="progress-text" id="progressText">正在解析链接...</div>
+            <div class="progress-text" id="progressText">正在处理...</div>
+            <div class="status-steps" id="statusSteps">
+                <span class="status-step" id="step1">解析</span>
+                <span class="status-step" id="step2">下载</span>
+                <span class="status-step" id="step3">识别</span>
+                <span class="status-step" id="step4">完成</span>
+            </div>
         </div>
         
         <div class="card result" id="resultCard">
@@ -263,14 +294,16 @@ N@J.VL 11/08 AgO:/"
     <script>
         const API_BASE = window.location.origin;
         let currentResult = null;
+        let taskId = null;
+        let pollInterval = null;
         
-        // 获取版本信息
+        // 获取版本
         async function checkVersion() {
             try {
                 const response = await fetch(`${API_BASE}/api/health`);
                 const data = await response.json();
                 document.getElementById('versionBadge').textContent = 
-                    `v${data.version || '?.?'} · ${data.status === 'ok' ? '✓ 正常' : '✗ 异常'}`;
+                    `v${data.version || '?.?'} · ${data.status === 'ok' ? '✓' : '✗'}`;
             } catch (e) {
                 document.getElementById('versionBadge').textContent = 'v?.? · 离线';
             }
@@ -285,9 +318,28 @@ N@J.VL 11/08 AgO:/"
             setTimeout(() => toast.classList.remove('show'), 3000);
         }
         
-        function updateProgress(percent, text) {
-            document.getElementById('progressFill').style.width = `${percent}%`;
-            document.getElementById('progressText').textContent = text;
+        function updateSteps(status) {
+            const steps = ['step1', 'step2', 'step3', 'step4'];
+            const statusMap = {
+                'pending': 0,
+                'parsing': 1,
+                'downloading': 2,
+                'transcribing': 3,
+                'completed': 4,
+                'failed': -1
+            };
+            
+            const current = statusMap[status] || 0;
+            
+            steps.forEach((step, i) => {
+                const el = document.getElementById(step);
+                el.classList.remove('active', 'done');
+                if (i < current) {
+                    el.classList.add('done');
+                } else if (i === current) {
+                    el.classList.add('active');
+                }
+            });
         }
         
         async function startExtract() {
@@ -302,7 +354,7 @@ N@J.VL 11/08 AgO:/"
             document.getElementById('inputCard').classList.add('hidden');
             document.getElementById('progressCard').classList.add('active');
             document.getElementById('resultCard').classList.remove('active');
-            updateProgress(10, '正在解析链接...');
+            document.getElementById('progressFill').style.width = '0%';
             
             try {
                 const response = await fetch(`${API_BASE}/api/extract`, {
@@ -311,14 +363,11 @@ N@J.VL 11/08 AgO:/"
                     body: JSON.stringify({ url: input })
                 });
                 
-                updateProgress(50, '正在下载视频...');
-                
                 const data = await response.json();
                 
                 if (data.success) {
-                    updateProgress(80, 'AI 语音识别中...');
-                    currentResult = data.data;
-                    setTimeout(() => showResult(data.data), 500);
+                    taskId = data.taskId;
+                    pollStatus();
                 } else {
                     throw new Error(data.message);
                 }
@@ -326,6 +375,49 @@ N@J.VL 11/08 AgO:/"
                 showToast(error.message);
                 document.getElementById('inputCard').classList.remove('hidden');
                 document.getElementById('progressCard').classList.remove('active');
+            }
+        }
+        
+        async function pollStatus() {
+            if (!taskId) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/status/${taskId}`);
+                const data = await response.json();
+                
+                // 更新进度
+                document.getElementById('progressFill').style.width = `${data.progress}%`;
+                updateSteps(data.status);
+                
+                // 状态文本
+                const statusText = {
+                    'pending': '等待处理...',
+                    'parsing': '正在解析链接...',
+                    'downloading': '正在下载视频...',
+                    'transcribing': 'AI 语音识别中...',
+                    'completed': '处理完成！',
+                    'failed': '处理失败'
+                };
+                document.getElementById('progressText').textContent = statusText[data.status] || '处理中...';
+                
+                if (data.status === 'completed') {
+                    currentResult = data.data;
+                    setTimeout(() => showResult(data.data), 500);
+                    return;
+                }
+                
+                if (data.status === 'failed') {
+                    showToast(data.message || '处理失败');
+                    document.getElementById('inputCard').classList.remove('hidden');
+                    document.getElementById('progressCard').classList.remove('active');
+                    return;
+                }
+                
+                // 继续轮询
+                setTimeout(pollStatus, 2000);
+                
+            } catch (error) {
+                setTimeout(pollStatus, 3000);
             }
         }
         
@@ -375,6 +467,7 @@ N@J.VL 11/08 AgO:/"
         function resetAll() {
             document.getElementById('urlInput').value = '';
             currentResult = null;
+            taskId = null;
             document.getElementById('inputCard').classList.remove('hidden');
             document.getElementById('resultCard').classList.remove('active');
             document.getElementById('progressCard').classList.remove('active');
