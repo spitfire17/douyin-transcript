@@ -40,6 +40,15 @@
         .header h1 { font-size: 28px; margin-bottom: 8px; }
         .header p { font-size: 15px; opacity: 0.9; }
         
+        .version-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+        
         .card {
             background: var(--white);
             border-radius: 16px;
@@ -256,6 +265,7 @@
         <div class="header">
             <h1>🎬 视频文案提取</h1>
             <p>粘贴视频链接，AI 自动提取完整文案</p>
+            <div class="version-badge" id="versionBadge">v--</div>
         </div>
         
         <div class="card" id="inputCard">
@@ -346,6 +356,21 @@ https://v.douyin.com/xxx"
         let currentResult = null;
         let taskId = null;
         let currentTab = 'direct';
+        
+        // 获取版本信息
+        async function checkVersion() {
+            try {
+                const response = await fetch(`${API_BASE}/api/health`);
+                const data = await response.json();
+                const versionBadge = document.getElementById('versionBadge');
+                versionBadge.textContent = `v${data.version || '?.?'} · ${data.status === 'ok' ? '✓ 正常' : '✗ 异常'}`;
+            } catch (e) {
+                document.getElementById('versionBadge').textContent = 'v?.? · 离线';
+            }
+        }
+        
+        // 页面加载时检查版本
+        checkVersion();
         
         function switchTab(tab) {
             currentTab = tab;

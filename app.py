@@ -171,7 +171,8 @@ def health():
     return jsonify({
         'status': 'ok',
         'service': 'douyin-transcript',
-        'version': '2.1'
+        'version': '2.2',
+        'updated': '2024-04-10'
     })
 
 if __name__ == '__main__':
