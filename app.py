@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-抖音文案提取 - 完整服务版 v2.1
-支持视频直链下载 + AI 语音识别
-修复：添加视频转码和更好的错误处理
+抖音文案提取 - 完整服务版 v3.0
+支持：抖音分享链接直接解析 + 视频下载 + AI 语音识别
 """
 
 from flask import Flask, request, jsonify, send_from_directory
@@ -18,8 +17,111 @@ import uuid
 app = Flask(__name__, static_folder='public')
 CORS(app)
 
+def extract_url_from_share(text):
+    """从分享口令中提取抖音链接"""
+    # 匹配 https://v.douyin.com/xxx 格式
+    pattern = r'https://v\.douyin\.com/[A-Za-z0-9]+'
+    match = re.search(pattern, text)
+    if match:
+        return match.group(0)
+    # 匹配 https://www.douyin.com/video/xxx 格式
+    pattern2 = r'https://www\.douyin\.com/video/\d+'
+    match2 = re.search(pattern2, text)
+    if match2:
+        return match2.group(0)
+    return None
+
+def get_video_url_from_douyin(share_url):
+    """使用浏览器自动化获取抖音视频直链"""
+    try:
+        # 构建 JavaScript 代码来获取视频
+        js_code = '''
+const puppeteer = require('puppeteer');
+
+(async () => {
+    const browser = await puppeteer.launch({
+        headless: 'new',
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-web-security']
+    });
+    
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    
+    try {
+        await page.goto('SHARE_URL', { waitUntil: 'networkidle2', timeout: 30000 });
+        
+        // 等待页面加载
+        await page.waitForTimeout(3000);
+        
+        // 获取视频元素
+        const videoInfo = await page.evaluate(() => {
+            const video = document.querySelector('video');
+            if (video && video.src) {
+                return {
+                    videoUrl: video.src,
+                    title: document.title || '抖音视频'
+                };
+            }
+            
+            // 尝试从页面源码中找视频链接
+            const html = document.documentElement.innerHTML;
+            const match = html.match(/(https:\\/\\/[^"]*douyinvod[^"]*\\.mp4[^"]*)"/);
+            if (match) {
+                return {
+                    videoUrl: match[1].replace(/\\/g, '/'),
+                    title: document.title || '抖音视频'
+                };
+            }
+            
+            return null;
+        });
+        
+        console.log(JSON.stringify(videoInfo || {error: '未找到视频'}));
+    } catch (e) {
+        console.log(JSON.stringify({error: e.message}));
+    } finally {
+        await browser.close();
+    }
+})();
+'''
+        js_code = js_code.replace('SHARE_URL', share_url)
+        
+        # 写入临时文件执行
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False) as f:
+            f.write(js_code)
+            js_file = f.name
+        
+        # 执行 puppeteer 脚本
+        result = subprocess.run(
+            ['node', js_file],
+            capture_output=True,
+            text=True,
+            timeout=60000
+        )
+        
+        os.remove(js_file)
+        
+        # 解析结果
+        lines = result.stdout.strip().split('\n')
+        for line in lines:
+            line = line.strip()
+            if line and line.startswith('{'):
+                try:
+                    data = json.loads(line)
+                    if 'videoUrl' in data:
+                        return data['videoUrl'], data.get('title', '抖音视频')
+                    elif 'error' in data:
+                        return None, data['error']
+                except:
+                    continue
+        
+        return None, '未找到视频链接'
+        
+    except Exception as e:
+        return None, str(e)
+
 def download_video_direct(video_url, output_path):
-    """直接下载视频，使用更好的兼容性处理"""
+    """直接下载视频"""
     cmd = [
         'curl', '-L', '-o', output_path,
         '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -93,6 +195,46 @@ def transcribe_video(video_path, model_size='tiny'):
 def index():
     return send_from_directory('public', 'index.html')
 
+@app.route('/api/parse', methods=['POST'])
+def parse_douyin_link():
+    """解析抖音分享链接获取视频直链"""
+    try:
+        data = request.get_json()
+        share_text = data.get('share_text', '')
+        
+        if not share_text:
+            return jsonify({'success': False, 'message': '请输入分享内容'}), 400
+        
+        # 提取抖音链接
+        douyin_url = extract_url_from_share(share_text)
+        
+        if not douyin_url:
+            return jsonify({
+                'success': False,
+                'message': '未找到有效的抖音链接，请检查分享内容'
+            }), 400
+        
+        # 获取视频直链（使用浏览器自动化）
+        video_url, title = get_video_url_from_douyin(douyin_url)
+        
+        if not video_url:
+            return jsonify({
+                'success': False,
+                'message': f'无法获取视频直链: {title}'
+            }), 400
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'video_url': video_url,
+                'title': title,
+                'douyin_url': douyin_url
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 @app.route('/api/extract', methods=['POST'])
 def start_extract():
     """提取文案API"""
@@ -100,6 +242,13 @@ def start_extract():
     try:
         data = request.get_json()
         video_url = data.get('video_url', '')
+        share_text = data.get('share_text', '')
+        
+        # 如果提供了分享链接，先解析
+        if share_text and not video_url:
+            douyin_url = extract_url_from_share(share_text)
+            if douyin_url:
+                video_url, _ = get_video_url_from_douyin(douyin_url)
         
         if not video_url:
             return jsonify({'success': False, 'message': '请提供视频链接'}), 400
@@ -126,7 +275,6 @@ def start_extract():
         
         if not success:
             print(f"转码失败: {error}")
-            # 尝试直接使用原文件
             converted_path = raw_path
         
         # 语音识别
@@ -171,13 +319,14 @@ def health():
     return jsonify({
         'status': 'ok',
         'service': 'douyin-transcript',
-        'version': '2.2',
+        'version': '3.0',
         'updated': '2024-04-10'
     })
 
 if __name__ == '__main__':
     print("=" * 50)
-    print("抖音文案提取服务 v2.1")
+    print("抖音文案提取服务 v3.0")
+    print("支持：抖音分享链接直接解析")
     print("访问地址: http://localhost:5000")
     print("=" * 50)
     app.run(host='0.0.0.0', port=5000, debug=False)
