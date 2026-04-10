@@ -24,7 +24,8 @@ tasks = {}
 
 def extract_url_from_share(text):
     """从分享口令中提取抖音链接"""
-    pattern = r'https://v\.douyin\.com/[A-Za-z0-9]+'
+    # 支持链接中的下划线和斜杠
+    pattern = r'https://v\.douyin\.com/[A-Za-z0-9_]+'
     match = re.search(pattern, text)
     if match:
         return match.group(0)
